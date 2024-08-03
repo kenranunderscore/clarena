@@ -4,7 +4,7 @@
   :maintainer "Johannes Maier"
   :mailto "johannes.maier@mailbox.org"
   :license "MIT"
-  :depends-on ()
+  :depends-on (:cl-raylib)
   :components ((:module "src"
                 :components
                 ((:file "main"))))
@@ -14,8 +14,8 @@
 (asdf:defsystem "cluarena/tests"
   :author "Johannes Maier"
   :license "MIT"
-  :depends-on ("cluarena"
-               "rove")
+  :depends-on (:cluarena
+               :rove)
   :components ((:module "tests"
                 :components
                 ((:file "main"))))
