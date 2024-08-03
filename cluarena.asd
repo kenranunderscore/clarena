@@ -7,7 +7,12 @@
   :depends-on (:cl-raylib)
   :components ((:module "src"
                 :components
-                ((:file "main"))))
+                ((:file "package")
+                 (:file "main")))
+               (:module "lua-bindings"
+                :components
+                ((:file "package")
+                 (:file "bindings"))))
   :description ""
   :in-order-to ((asdf:test-op (test-op "cluarena/tests"))))
 

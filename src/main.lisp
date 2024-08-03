@@ -1,5 +1,3 @@
-(defpackage cluarena
-  (:use :cl))
 (in-package :cluarena)
 
 (defconstant +width+ 1600)

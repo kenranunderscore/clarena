@@ -1,0 +1,2 @@
+(defpackage cluarena
+  (:use :cl))

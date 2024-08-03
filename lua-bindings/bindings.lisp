@@ -1,5 +1,3 @@
-(cl:defpackage :lua
-  (:use :cffi))
 (cl:in-package :lua)
 
 (define-foreign-library lua-5.4
@@ -23,6 +21,3 @@
   (ls lua-state)
   (index :int)
   (len (:pointer :size)))
-
-(cl:defun tostring (ls index)
-  (tolstring ls index (null-pointer)))
