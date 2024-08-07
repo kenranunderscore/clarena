@@ -8,7 +8,8 @@
   :components ((:module "lua-bindings"
                 :components
                 ((:file "package")
-                 (:file "bindings")))
+                 (:file "bindings")
+                 (:file "wrappers")))
                (:module "src"
                 :components
                 ((:file "package")

@@ -118,7 +118,8 @@
                (setf (pos p) (next-pos p)))))))
 
 (defun create-lua-player (ecs file-path movable)
-  (let ((ls (lua::newstate)))
+  (let* ((ls (lua::newstate))
+         (comp (make-instance 'lua-controlled :lua-state ls)))
     (lua::openlibs ls)
     (lua::dofile ls file-path)
     (cffi:defcallback cb-getx :int ((l lua::lua-state))
@@ -134,9 +135,10 @@
     (make-collidable
      (new-entity
       ecs
-      (make-instance 'lua-controlled :lua-state ls)
+      comp
       (make-instance 'rendering :color :red)
-      movable))))
+      movable))
+    comp))
 
 (defun run-lua-control-system (ecs tick)
   (let ((cts (find-components ecs :lua-controlled)))
@@ -147,9 +149,9 @@
         (lua::call ls 1 0)))))
 
 (defun main ()
-  (let ((ecs (make-instance 'ecs)))
-    (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(100 250) :velocity 2))
-    (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(500 250) :velocity -1))
+  (let* ((ecs (make-instance 'ecs))
+         (player-1 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(100 250) :velocity 2)))
+         (player-2 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(500 250) :velocity -1))))
     (raylib:with-window (*width* *height* "HALLO")
       (raylib:set-target-fps 60)
       (loop
@@ -161,4 +163,6 @@
              (run-render-system ecs)
              (run-lua-control-system ecs tick)
              (run-movement-system ecs)
-             (run-collision-system ecs))))))
+             (run-collision-system ecs))))
+    (lua::lclose (lua-state player-1))
+    (lua::lclose (lua-state player-2))))

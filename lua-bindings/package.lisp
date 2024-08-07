@@ -1,2 +1,2 @@
 (defpackage lua
-  (:use :cffi))
+  (:use :cffi :cl))

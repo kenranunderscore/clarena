@@ -1,4 +1,4 @@
-(cl:in-package :lua)
+(in-package :lua)
 
 (define-foreign-library lua-5.4
   (:unix (:or "liblua.so.5.4" "liblua.so"))
@@ -10,7 +10,7 @@
 
 (defcfun (newstate "luaL_newstate") lua-state)
 
-(defcfun (close "lua_close") :void
+(defcfun (lclose "lua_close") :void
   (ls lua-state))
 
 (defcfun (pushstring "lua_pushstring") :string
@@ -41,9 +41,6 @@
   (fixme :int)
   (k :pointer))
 
-(cl:defun call (ls nargs nresults)
-  (callk ls nargs nresults 0 (null-pointer)))
-
 (defcfun (pcallk "lua_pcallk") :int
   (ls lua-state)
   (nargs :int)
@@ -52,29 +49,15 @@
   (fixme :int)
   (k :pointer))
 
-(cl:defun pcall (ls nargs nresults errfunc)
-  (pcallk ls nargs nresults errfunc 0 (null-pointer)))
-
 (defcfun (pushcclosure "lua_pushcclosure") :void
   (ls lua-state)
   (f :pointer)
   (n :int))
 
-(cl:defun pushcfunction (ls f)
-  (pushcclosure ls f 0))
-
 (defcfun (loadfilex "luaL_loadfilex") :int
   (ls lua-state)
   (filename :string)
   (mode :string))
-
-(cl:defun loadfile (ls filename)
-  (loadfilex ls filename (null-pointer)))
-
-(cl:defun dofile (ls filename)
-  (cl:let ((res (loadfile ls filename)))
-    (cl:when (cl:= 0 res)
-      (pcall ls 0 -1 0))))
 
 (defcfun (openselectedlibs "luaL_openselectedlibs") :void
   (ls lua-state)
