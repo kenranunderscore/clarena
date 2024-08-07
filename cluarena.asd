@@ -5,14 +5,15 @@
   :mailto "johannes.maier@mailbox.org"
   :license "MIT"
   :depends-on (:cl-raylib)
-  :components ((:module "src"
+  :components ((:module "lua-bindings"
                 :components
                 ((:file "package")
-                 (:file "main")))
-               (:module "lua-bindings"
+                 (:file "bindings")))
+               (:module "src"
                 :components
                 ((:file "package")
-                 (:file "bindings"))))
+                 (:file "ecs")
+                 (:file "main"))))
   :description ""
   :in-order-to ((asdf:test-op (test-op "cluarena/tests"))))
 

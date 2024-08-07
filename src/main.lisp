@@ -1,14 +1,164 @@
 (in-package :cluarena)
 
-(defconstant +width+ 1600)
-(defconstant +height+ 900)
+(defclass rendering ()
+  ((color
+    :initarg :color
+    :accessor color)))
+
+(defmethod component-type ((component rendering))
+  :rendering)
+
+(defclass movable ()
+  ((pos
+    :initarg :pos
+    :accessor pos)
+   (next-pos
+    :initform nil
+    :accessor next-pos)
+   (velocity
+    :initarg :velocity
+    :initform 0
+    :accessor velocity)))
+
+(defmethod component-type ((component movable))
+  :movable)
+
+(defclass player-intent ()
+  ((dist
+    :initform 0
+    :accessor dist)))
+
+(defun make-default-intent ()
+  (make-instance 'player-intent))
+
+(defclass lua-controlled ()
+  ((lua-state
+    :initarg :lua-state
+    :accessor lua-state)
+   (intent
+    :initform (make-default-intent)
+    :accessor intent)))
+
+(defmethod component-type ((component lua-controlled))
+  :lua-controlled)
+
+(defclass collidable ()
+  ((entity-id
+    :initarg :entity-id
+    :reader :entity-id)))
+
+(defmethod component-type ((component collidable))
+  :collidable)
+
+(defun make-collidable (e)
+  (let ((comp (make-instance 'collidable :entity-id (id e))))
+    (add-component comp e)))
+
+(defparameter *player-radius* 25.0)
+(defparameter *width* 800)
+(defparameter *height* 600)
+
+(defun run-render-system (ecs)
+  (let ((tups (find-components ecs :movable :rendering)))
+    (loop
+      for tup in tups
+      do (progn
+           (let* ((comp (car tup))
+                  (p (pos comp)))
+             (raylib:draw-circle
+              (car p)
+              (cadr p)
+              *player-radius*
+              (color (cadr tup))))))))
+
+(defun valid-position? (p)
+  (let ((x (car p))
+        (y (cadr p)))
+    (and (>= x *player-radius*)
+         (<= x (- *width* *player-radius*))
+         (>= y *player-radius*)
+         (<= y (- *height* *player-radius*)))))
+
+(defun run-movement-system (ecs)
+  (let ((tups (find-components ecs :movable)))
+    (loop
+      for tup in tups
+      do (progn
+           (let* ((comp (car tup))
+                  (p (pos comp))
+                  (v (velocity comp))
+                  (next (list (+ (car p) v)
+                              (cadr p))))
+             (if (valid-position? next)
+                 (setf (next-pos comp) next)
+                 (setf (next-pos comp) p)))))))
+
+(defun dist-sqr (p q)
+  (+ (expt (- (car p) (car q))
+           2.0)
+     (expt (- (cadr p) (cadr q))
+           2.0)))
+
+(defun distance (p q)
+  (sqrt (dist-sqr p q)))
+
+(defun players-collide? (radius p q)
+  (<= (distance p q) (* 2 radius)))
+
+(defun run-collision-system (ecs)
+  (let ((all (find-components ecs :movable :collidable)))
+    (loop
+      for tup in all
+      do (let ((p (car tup)))
+           (if (some
+                (lambda (pc)
+                  (players-collide? *player-radius* (next-pos p) (next-pos (car pc))))
+                (remove tup all :test #'eq))
+               (setf (next-pos p) (pos p))
+               (setf (pos p) (next-pos p)))))))
+
+(defun create-lua-player (ecs file-path movable)
+  (let ((ls (lua::newstate)))
+    (lua::openlibs ls)
+    (lua::dofile ls file-path)
+    (cffi:defcallback cb-getx :int ((l lua::lua-state))
+      (lua::pushnumber l (coerce (car (pos movable)) 'double-float))
+      1)
+    (lua::pushcfunction ls (cffi:callback cb-getx))
+    (lua::setglobal ls "getx")
+    (cffi:defcallback cb-gety :int ((l lua::lua-state))
+      (lua::pushnumber l (coerce (car (pos movable)) 'double-float))
+      1)
+    (lua::pushcfunction ls (cffi:callback cb-gety))
+    (lua::setglobal ls "gety")
+    (make-collidable
+     (new-entity
+      ecs
+      (make-instance 'lua-controlled :lua-state ls)
+      (make-instance 'rendering :color :red)
+      movable))))
+
+(defun run-lua-control-system (ecs tick)
+  (let ((cts (find-components ecs :lua-controlled)))
+    (dolist (c cts)
+      (let ((ls (lua-state (car c))))
+        (lua::getglobal ls "on_tick")
+        (lua::pushnumber ls (coerce tick 'double-float))
+        (lua::call ls 1 0)))))
 
 (defun main ()
-  (raylib:with-window (+width+ +height+ "CLUARENA")
-    (raylib:set-target-fps 60)
-    (loop
-      until (raylib:window-should-close)
-      do (raylib:with-drawing
-           (raylib:clear-background :darkgray)
-           (raylib:draw-fps 20 (- +height+ 20))
-           (raylib:draw-circle 200 300 25.0 :red)))))
+  (let ((ecs (make-instance 'ecs)))
+    (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(100 250) :velocity 2))
+    (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(500 250) :velocity -1))
+    (raylib:with-window (*width* *height* "HALLO")
+      (raylib:set-target-fps 60)
+      (loop
+        until (raylib:window-should-close)
+        for tick from 1
+        do (raylib:with-drawing
+             (raylib:clear-background :raywhite)
+             (raylib:draw-fps 20 20)
+             (run-render-system ecs)
+             (run-lua-control-system ecs tick)
+             (run-movement-system ecs)
+             (run-collision-system ecs))))))
