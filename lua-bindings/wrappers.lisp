@@ -16,3 +16,14 @@
   (let ((res (loadfile ls filename)))
     (when (= 0 res)
       (pcall ls 0 -1 0))))
+
+(defun pushfunction (ls f)
+  "Push a Lisp function/closure f to Lua. The function
+must take the Lua state as argument and then evaluate to the number of values
+that have been pushed onto the Lua stack."
+  (cffi:defcallback cb :int ((l lua-state)) (funcall f l))
+  (pushcfunction ls (cffi:callback cb)))
+
+(defun register (ls name f)
+  (pushfunction ls f)
+  (setglobal ls name))

@@ -117,21 +117,23 @@
                (setf (next-pos p) (pos p))
                (setf (pos p) (next-pos p)))))))
 
+(defun lua-getx (movable)
+  (lambda (l)
+    (lua::pushnumber l (coerce (car (pos movable)) 'double-float))
+    1))
+
+(defun lua-gety (movable)
+  (lambda (l)
+    (lua::pushnumber l (coerce (cadr (pos movable)) 'double-float))
+    1))
+
 (defun create-lua-player (ecs file-path movable)
   (let* ((ls (lua::newstate))
          (comp (make-instance 'lua-controlled :lua-state ls)))
     (lua::openlibs ls)
     (lua::dofile ls file-path)
-    (cffi:defcallback cb-getx :int ((l lua::lua-state))
-      (lua::pushnumber l (coerce (car (pos movable)) 'double-float))
-      1)
-    (lua::pushcfunction ls (cffi:callback cb-getx))
-    (lua::setglobal ls "getx")
-    (cffi:defcallback cb-gety :int ((l lua::lua-state))
-      (lua::pushnumber l (coerce (car (pos movable)) 'double-float))
-      1)
-    (lua::pushcfunction ls (cffi:callback cb-gety))
-    (lua::setglobal ls "gety")
+    (lua::register ls "getx" (lua-getx movable))
+    (lua::register ls "gety" (lua-gety movable))
     (make-collidable
      (new-entity
       ecs
