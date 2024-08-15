@@ -132,8 +132,10 @@
          (comp (make-instance 'lua-controlled :lua-state ls)))
     (lua::openlibs ls)
     (lua::dofile ls file-path)
-    (lua::register ls "getx" (lua-getx movable))
-    (lua::register ls "gety" (lua-gety movable))
+    (lua::create-module
+     ls "me"
+     ("getx" (lua-getx movable))
+     ("gety" (lua-gety movable)))
     (make-collidable
      (new-entity
       ecs
@@ -160,7 +162,7 @@
         until (raylib:window-should-close)
         for tick from 1
         do (raylib:with-drawing
-             (raylib:clear-background :raywhite)
+             (raylib:clear-background :darkgray)
              (raylib:draw-fps 20 20)
              (run-render-system ecs)
              (run-lua-control-system ecs tick)

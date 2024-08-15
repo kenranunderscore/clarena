@@ -66,3 +66,13 @@
 
 (defcfun (openlibs "luaL_openlibs") :void
   (ls lua-state))
+
+(defcfun (createtable "lua_createtable") :void
+  (ls lua-state)
+  (narr :int)
+  (nrec :int))
+
+(defcfun (setfield "lua_setfield") :void
+  (ls lua-state)
+  (index :int)
+  (k :string))

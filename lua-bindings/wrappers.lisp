@@ -27,3 +27,18 @@ that have been pushed onto the Lua stack."
 (defun register (ls name f)
   (pushfunction ls f)
   (setglobal ls name))
+
+(defmacro newtable (ls)
+  `(createtable ,ls 0 0))
+
+;; TODO: use better data structure for bindings (alist?)
+(defmacro create-module (ls module-name &rest bindings)
+  `(progn
+     (newtable ,ls)
+     ,@(loop
+         for pair in bindings
+         collect
+         `(progn
+            (pushfunction ,ls ,(cadr pair))
+            (setfield ,ls -2 ,(car pair))))
+     (setglobal ,ls ,module-name)))
