@@ -40,3 +40,15 @@ that have been pushed onto the Lua stack."
             (pushfunction ,ls ,(cadr pair))
             (setfield ,ls -2 ,(car pair))))
      (setglobal ,ls ,module-name)))
+
+(define-condition unexpected-lua-stack-size (error)
+  ((stack-size
+    :initarg :stack-size
+    :initform nil
+    :reader stack-size)))
+
+(defun assert-stack-size (ls expected-size)
+  "Assert that the Lua stack currently has size EXPECTED-SIZE."
+  (let ((size (gettop ls)))
+    (unless (eq expected-size (gettop ls))
+      (error (make-condition 'unexpected-lua-stack-size :stack-size size)))))
