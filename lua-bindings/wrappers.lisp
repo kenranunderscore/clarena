@@ -12,10 +12,17 @@
 (defmacro loadfile (ls filename)
   `(loadfilex ,ls ,filename (null-pointer)))
 
+(define-condition lua-dofile-failure (error)
+  ((filename
+    :initarg :filename
+    :initform nil
+    :reader filename)))
+
 (defun dofile (ls filename)
   (let ((res (loadfile ls filename)))
-    (when (= 0 res)
-      (pcall ls 0 -1 0))))
+    (if (= 0 res)
+        (pcall ls 0 -1 0)
+        (error (make-condition 'lua-dofile-failure :filename filename)))))
 
 (defmacro pushfunction (ls f)
   "Push a Lisp function/closure f to Lua. The function
@@ -52,3 +59,9 @@ that have been pushed onto the Lua stack."
   (let ((size (gettop ls)))
     (unless (eq expected-size (gettop ls))
       (error (make-condition 'unexpected-lua-stack-size :stack-size size)))))
+
+(defmacro pop-stack (ls n)
+  `(settop ,ls ,(- (1+ n))))
+
+(defmacro tostring (ls index)
+  `(tolstring ,ls ,index ,(null-pointer)))

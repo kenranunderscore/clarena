@@ -76,3 +76,23 @@
   (ls lua-state)
   (index :int)
   (k :string))
+
+(defcfun (gettable "lua_gettable") :int
+  (ls lua-state)
+  (index :int))
+
+(defcfun (getfield "lua_getfield") :int
+  (ls lua-state)
+  (index :int)
+  (name :string))
+
+(defcfun (gettop "lua_gettop") :int
+  (ls lua-state))
+
+(defcfun (gettype "lua_type") :int
+  (ls lua-state)
+  (index :int))
+
+(defcfun (settop "lua_settop") :void
+  (ls lua-state)
+  (index :int))

@@ -148,7 +148,8 @@
   (let ((cts (find-components ecs :lua-controlled)))
     (dolist (c cts)
       (let ((ls (lua-state (car c))))
-        (lua::getglobal ls "on_tick")
+        (lua::assert-stack-size ls 1)
+        (lua::getfield ls 1 "on_tick")
         (lua::pushnumber ls (coerce tick 'double-float))
         (lua::call ls 1 0)))))
 
