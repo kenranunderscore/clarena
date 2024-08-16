@@ -21,9 +21,10 @@
   "Push a Lisp function/closure f to Lua. The function
 must take the Lua state as argument and then evaluate to the number of values
 that have been pushed onto the Lua stack."
-  `(progn
-     (cffi:defcallback cb :int ((l lua-state)) (funcall ,f l))
-     (pushcfunction ,ls (cffi:callback cb))))
+  (let ((callback (gensym "lua-callback")))
+    `(progn
+       (cffi:defcallback ,callback :int ((l lua-state)) (funcall ,f l))
+       (pushcfunction ,ls (cffi:callback ,callback)))))
 
 (defmacro newtable (ls)
   `(createtable ,ls 0 0))
