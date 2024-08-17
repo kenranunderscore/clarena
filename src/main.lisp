@@ -127,6 +127,15 @@
     (lua::pushnumber l (coerce (cadr (pos movable)) 'double-float))
     1))
 
+(defun lua-turn (ls)
+  (let ((angle (lua::tonumber ls -1)))
+    (lua::newtable ls)
+    (lua::pushstring ls "turn_right")
+    (lua::setfield ls -2 "tag")
+    (lua::pushnumber ls angle)
+    (lua::setfield ls -2 "angle")
+    1))
+
 (defun create-lua-player (ecs file-path movable)
   (let* ((ls (lua::newstate))
          (comp (make-instance 'lua-controlled :lua-state ls)))
@@ -134,8 +143,9 @@
     (lua::dofile ls file-path)
     (lua::create-module
      ls "me"
-     ("getx" (lua-getx movable))
-     ("gety" (lua-gety movable)))
+     ("x" (lua-getx movable))
+     ("y" (lua-gety movable))
+     ("turn" #'lua-turn))
     (make-collidable
      (new-entity
       ecs
@@ -151,7 +161,27 @@
         (lua::assert-stack-size ls 1)
         (lua::getfield ls 1 "on_tick")
         (lua::pushnumber ls (coerce tick 'double-float))
-        (lua::call ls 1 0)))))
+        (lua::call ls 1 1)
+        (read-player-command ls)
+        (lua::pop-stack ls 1)))))
+
+(defclass turn-cmd ()
+  ((angle
+    :initarg :angle
+    :reader turn-angle)))
+
+(defun read-player-command (ls)
+  (when (lua::istable ls -1)
+    (lua::getfield ls -1 "tag")
+    (let ((tag (lua::tostring ls -1)))
+      (cond
+        ((equal tag "turn_right")
+         (lua::pop-stack ls 1)
+         (lua::getfield ls -1 "angle")
+         (let ((angle (lua::tonumber ls -1)))
+           (lua::pop-stack ls 1)
+           (make-instance 'turn-cmd :angle angle)))
+        (t (format t "Unexpected command tag: ~a~%" tag))))))
 
 (defun main ()
   (let* ((ecs (make-instance 'ecs))

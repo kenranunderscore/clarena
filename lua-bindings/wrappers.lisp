@@ -1,5 +1,15 @@
 (in-package :lua)
 
+(defconstant +tnil+ 0)
+(defconstant +tboolean+ 1)
+(defconstant +tlightuserdata+ 2)
+(defconstant +tnumber+ 3)
+(defconstant +tstring+ 4)
+(defconstant +ttable+ 5)
+(defconstant +tfunction+ 6)
+(defconstant +tuserdata+ 7)
+(defconstant +tthread+ 8)
+
 (defmacro call (ls nargs nresults)
   `(callk ,ls ,nargs ,nresults 0 (null-pointer)))
 
@@ -65,3 +75,9 @@ that have been pushed onto the Lua stack."
 
 (defmacro tostring (ls index)
   `(tolstring ,ls ,index ,(null-pointer)))
+
+(defmacro tonumber (ls index)
+  `(tonumberx ,ls ,index ,(null-pointer)))
+
+(defmacro istable (ls index)
+  `(eq (gettype ,ls ,index) +ttable+))

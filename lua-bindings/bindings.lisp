@@ -21,6 +21,11 @@
   (ls lua-state)
   (s :double))
 
+(defcfun (tonumberx "lua_tonumberx") :double
+  (ls lua-state)
+  (index :int)
+  (isnum (:pointer :int)))
+
 (defcfun (tolstring "lua_tolstring") :string
   (ls lua-state)
   (index :int)
