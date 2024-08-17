@@ -13,8 +13,28 @@
 (defmacro call (ls nargs nresults)
   `(callk ,ls ,nargs ,nresults 0 (null-pointer)))
 
+(define-condition lua-call-error (error)
+  ((function-name
+    :initarg :function-name
+    :reader function-name)
+   (error-msg
+    :initarg :error-msg
+    :reader error-msg)
+   (error-code
+    :initarg :error-code
+    :reader error-code)))
+
 (defmacro pcall (ls nargs nresults errfunc)
   `(pcallk ,ls ,nargs ,nresults ,errfunc 0 (null-pointer)))
+
+(defmacro pcall-ex (ls nargs nresults errfunc)
+  `(let ((res (pcall ,ls ,nargs ,nresults ,errfunc)))
+     (unless (= 0 res)
+       (let ((msg (tostring ,ls -1)))
+         (error (make-condition 'lua-call-error
+                                :function-name "pcall"
+                                :error-msg msg
+                                :error-code res))))))
 
 (defmacro pushcfunction (ls f)
   `(pushcclosure ,ls ,f 0))

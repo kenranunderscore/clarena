@@ -161,7 +161,7 @@
         (lua::assert-stack-size ls 1)
         (lua::getfield ls 1 "on_tick")
         (lua::pushnumber ls (coerce tick 'double-float))
-        (lua::call ls 1 1)
+        (lua::pcall-ex ls 1 1 0)
         (read-player-command ls)
         (lua::pop-stack ls 1)))))
 
