@@ -171,17 +171,19 @@
     :reader turn-angle)))
 
 (defun read-player-command (ls)
-  (when (lua::istable ls -1)
-    (lua::getfield ls -1 "tag")
-    (let ((tag (lua::tostring ls -1)))
-      (cond
-        ((equal tag "turn_right")
-         (lua::pop-stack ls 1)
-         (lua::getfield ls -1 "angle")
-         (let ((angle (lua::tonumber ls -1)))
-           (lua::pop-stack ls 1)
-           (make-instance 'turn-cmd :angle angle)))
-        (t (format t "Unexpected command tag: ~a~%" tag))))))
+  (if (lua::istable ls -1)
+      (progn
+        (lua::getfield ls -1 "tag")
+        (let ((tag (lua::tostring ls -1)))
+          (cond
+            ((equal tag "turn_right")
+             (lua::pop-stack ls 1)
+             (lua::getfield ls -1 "angle")
+             (let ((angle (lua::tonumber ls -1)))
+               (lua::pop-stack ls 1)
+               (make-instance 'turn-cmd :angle angle)))
+            (t (format t "Unexpected command tag: ~a~%" tag)))))
+      (format t "Unexpected object on the stack when reading player command~%")))
 
 (defun main ()
   (let* ((ecs (make-instance 'ecs))
