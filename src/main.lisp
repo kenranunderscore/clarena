@@ -163,7 +163,7 @@
         (lua::pushnumber ls (coerce tick 'double-float))
         (lua::pcall-ex ls 1 1 0)
         (read-player-command ls)
-        (lua::pop-stack ls 1)))))
+        (lua::pop ls 1)))))
 
 (defclass turn-cmd ()
   ((angle
@@ -177,10 +177,10 @@
         (let ((tag (lua::tostring ls -1)))
           (cond
             ((equal tag "turn_right")
-             (lua::pop-stack ls 1)
+             (lua::pop ls 1)
              (lua::getfield ls -1 "angle")
              (let ((angle (lua::tonumber ls -1)))
-               (lua::pop-stack ls 1)
+               (lua::pop ls 1)
                (make-instance 'turn-cmd :angle angle)))
             (t (format t "Unexpected command tag: ~a~%" tag)))))
       (format t "Unexpected object on the stack when reading player command~%")))
@@ -201,5 +201,5 @@
              (run-lua-control-system ecs tick)
              (run-movement-system ecs)
              (run-collision-system ecs))))
-    (lua::lclose (lua-state player-1))
-    (lua::lclose (lua-state player-2))))
+    (lua::close (lua-state player-1))
+    (lua::close (lua-state player-2))))

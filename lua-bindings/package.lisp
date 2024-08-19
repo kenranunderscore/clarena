@@ -1,2 +1,3 @@
 (defpackage lua
-  (:use :cffi :cl))
+  (:use :cffi :cl)
+  (:shadow :pop :type :close))

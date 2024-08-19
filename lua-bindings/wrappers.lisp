@@ -90,7 +90,7 @@ that have been pushed onto the Lua stack."
     (unless (eq expected-size (gettop ls))
       (error (make-condition 'unexpected-lua-stack-size :stack-size size)))))
 
-(defmacro pop-stack (ls n)
+(defmacro pop (ls n)
   `(settop ,ls ,(- (1+ n))))
 
 (defmacro tostring (ls index)
@@ -100,4 +100,4 @@ that have been pushed onto the Lua stack."
   `(tonumberx ,ls ,index ,(null-pointer)))
 
 (defmacro istable (ls index)
-  `(eq (gettype ,ls ,index) +ttable+))
+  `(eq (type ,ls ,index) +ttable+))

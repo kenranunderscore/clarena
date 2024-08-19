@@ -10,7 +10,7 @@
 
 (defcfun (newstate "luaL_newstate") lua-state)
 
-(defcfun (lclose "lua_close") :void
+(defcfun (close "lua_close") :void
   (ls lua-state))
 
 (defcfun (pushstring "lua_pushstring") :string
@@ -94,7 +94,7 @@
 (defcfun (gettop "lua_gettop") :int
   (ls lua-state))
 
-(defcfun (gettype "lua_type") :int
+(defcfun (type "lua_type") :int
   (ls lua-state)
   (index :int))
 
