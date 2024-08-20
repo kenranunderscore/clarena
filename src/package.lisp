@@ -1,2 +1,3 @@
 (defpackage cluarena
-  (:use :cl))
+  (:use :cl)
+  (:shadow :round))

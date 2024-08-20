@@ -8,14 +8,6 @@
 (defmethod component-type ((component rendering))
   :rendering)
 
-(defclass current-tick ()
-  ((tick
-    :initarg :tick
-    :accessor tick)))
-
-(defmethod component-type ((component current-tick))
-  :current-tick)
-
 (defclass movable ()
   ((pos
     :initarg :pos
@@ -162,36 +154,6 @@
       movable))
     comp))
 
-(defun run-lua-control-system (ecs)
-  (let ((cts (find-components ecs :lua-controlled))
-        (tick (tick (caar (find-components ecs :current-tick)))))
-    (dolist (c cts)
-      (let ((ls (lua-state (car c))))
-        (lua::assert-stack-size ls 1)
-        (lua::getfield ls 1 "on_tick")
-        (lua::pushnumber ls (coerce tick 'double-float))
-        (lua::pcall-ex ls 1 1 0)
-        (read-player-command ls)
-        (lua::pop ls 1)))))
-
-(defun run-tick-system (ecs)
-  (let ((cts (find-components ecs :current-tick)))
-    (dolist (c cts)
-      (incf (tick (car c))))))
-
-(defclass turn-cmd ()
-  ((angle
-    :initarg :angle
-    :reader turn-angle)))
-
-(define-condition unknown-player-command (error)
-  ((tag
-    :initarg :tag
-    :reader tag)))
-
-(define-condition player-command-could-not-be-read (error)
-  ())
-
 (defun read-player-command (ls)
   (if (lua::istable ls -1)
       (progn
@@ -207,18 +169,91 @@
             (t (error (make-condition 'unknown-player-command :tag tag))))))
       (error (make-condition 'player-command-could-not-be-read))))
 
-(defun run-all-systems (ecs)
-  (run-tick-system ecs)
+(defun call-on-tick (ls tick)
+  (lua::getfield ls 1 "on_tick")
+  (lua::pushnumber ls (coerce tick 'double-float))
+  (lua::pcall-ex ls 1 1 0)
+  (read-player-command ls)
+  (lua::pop ls 1))
+
+(defun run-lua-control-system (ecs player-events)
+  (let ((cts (find-components ecs :lua-controlled)))
+    (dolist (c cts)
+      (let ((ls (lua-state (car c))))
+        (lua::assert-stack-size ls 1)
+        (mapcan
+         (lambda (e)
+           (let ((event-type (car e)))
+             (cond
+               ((eq event-type :tick)
+                (call-on-tick ls (cadr e)))
+               (t (format t "unhandled player event: ~a~%" event-type)))))
+         player-events)))))
+
+(defclass turn-cmd ()
+  ((angle
+    :initarg :angle
+    :reader turn-angle)))
+
+(define-condition unknown-player-command (error)
+  ((tag
+    :initarg :tag
+    :reader tag)))
+
+(define-condition player-command-could-not-be-read (error)
+  ())
+
+(defclass game-state ()
+  ((round
+    :initform 1
+    :accessor round)
+   (tick
+    :initform 0
+    :accessor tick)))
+
+(defun tick-events (state)
+  (let* ((tick (tick state))
+         (evts (list (list :tick tick))))
+    (if (zerop tick)
+        (cons (list :round-started (round state))
+              evts)
+        evts)))
+
+(defun determine-game-events (state)
+  (concatenate
+   'list
+   (tick-events state)))
+
+(defun game-events->player-events (game-events)
+  (reduce
+   (lambda (acc e)
+     (let ((event-type (car e)))
+       (cond
+         ((eq event-type :tick)
+          (cons e acc))
+         ((eq event-type :round-started)
+          (cons e acc))
+         (t (format t "encountered unknown game event type: ~a~%" (car e))))))
+   game-events
+   :initial-value nil))
+
+(defun advance-game-state (state)
+  (incf (tick state)))
+
+(defun run-all-systems (ecs state)
   (run-render-system ecs)
-  (run-lua-control-system ecs)
-  (run-movement-system ecs)
-  (run-collision-system ecs))
+  (let* ((evts (determine-game-events state))
+         (player-events (game-events->player-events evts)))
+    (run-lua-control-system ecs player-events)
+    (run-movement-system ecs)
+    (run-collision-system ecs)
+    (advance-game-state state)))
 
 (defun main ()
-  (let* ((ecs (make-instance 'ecs))
+  (let* ((state (make-instance 'game-state))
+         (ecs (make-instance 'ecs))
          (player-1 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(100 250) :velocity 2)))
          (player-2 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(500 250) :velocity -1))))
-    (new-entity ecs (make-instance 'current-tick :tick 0))
     (raylib:with-window (*width* *height* "HALLO")
       (raylib:set-target-fps 60)
       (loop
@@ -226,6 +261,6 @@
         do (raylib:with-drawing
              (raylib:clear-background :darkgray)
              (raylib:draw-fps 20 20)
-             (run-all-systems ecs))))
+             (run-all-systems ecs state))))
     (lua::close (lua-state player-1))
     (lua::close (lua-state player-2))))
