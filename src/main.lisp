@@ -8,6 +8,14 @@
 (defmethod component-type ((component rendering))
   :rendering)
 
+(defclass current-tick ()
+  ((tick
+    :initarg :tick
+    :accessor tick)))
+
+(defmethod component-type ((component current-tick))
+  :current-tick)
+
 (defclass movable ()
   ((pos
     :initarg :pos
@@ -154,8 +162,9 @@
       movable))
     comp))
 
-(defun run-lua-control-system (ecs tick)
-  (let ((cts (find-components ecs :lua-controlled)))
+(defun run-lua-control-system (ecs)
+  (let ((cts (find-components ecs :lua-controlled))
+        (tick (tick (caar (find-components ecs :current-tick)))))
     (dolist (c cts)
       (let ((ls (lua-state (car c))))
         (lua::assert-stack-size ls 1)
@@ -164,6 +173,11 @@
         (lua::pcall-ex ls 1 1 0)
         (read-player-command ls)
         (lua::pop ls 1)))))
+
+(defun run-tick-system (ecs)
+  (let ((cts (find-components ecs :current-tick)))
+    (dolist (c cts)
+      (incf (tick (car c))))))
 
 (defclass turn-cmd ()
   ((angle
@@ -193,21 +207,25 @@
             (t (error (make-condition 'unknown-player-command :tag tag))))))
       (error (make-condition 'player-command-could-not-be-read))))
 
+(defun run-all-systems (ecs)
+  (run-tick-system ecs)
+  (run-render-system ecs)
+  (run-lua-control-system ecs)
+  (run-movement-system ecs)
+  (run-collision-system ecs))
+
 (defun main ()
   (let* ((ecs (make-instance 'ecs))
          (player-1 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(100 250) :velocity 2)))
          (player-2 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(500 250) :velocity -1))))
+    (new-entity ecs (make-instance 'current-tick :tick 0))
     (raylib:with-window (*width* *height* "HALLO")
       (raylib:set-target-fps 60)
       (loop
         until (raylib:window-should-close)
-        for tick from 1
         do (raylib:with-drawing
              (raylib:clear-background :darkgray)
              (raylib:draw-fps 20 20)
-             (run-render-system ecs)
-             (run-lua-control-system ecs tick)
-             (run-movement-system ecs)
-             (run-collision-system ecs))))
+             (run-all-systems ecs))))
     (lua::close (lua-state player-1))
     (lua::close (lua-state player-2))))
