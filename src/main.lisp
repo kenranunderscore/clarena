@@ -170,6 +170,14 @@
     :initarg :angle
     :reader turn-angle)))
 
+(define-condition unknown-player-command (error)
+  ((tag
+    :initarg :tag
+    :reader tag)))
+
+(define-condition player-command-could-not-be-read (error)
+  ())
+
 (defun read-player-command (ls)
   (if (lua::istable ls -1)
       (progn
@@ -182,8 +190,8 @@
              (let ((angle (lua::tonumber ls -1)))
                (lua::pop ls 1)
                (make-instance 'turn-cmd :angle angle)))
-            (t (format t "Unexpected command tag: ~a~%" tag)))))
-      (format t "Unexpected object on the stack when reading player command~%")))
+            (t (error (make-condition 'unknown-player-command :tag tag))))))
+      (error (make-condition 'player-command-could-not-be-read))))
 
 (defun main ()
   (let* ((ecs (make-instance 'ecs))
