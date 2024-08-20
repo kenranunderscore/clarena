@@ -67,7 +67,7 @@ that have been pushed onto the Lua stack."
   `(createtable ,ls 0 0))
 
 ;; TODO: use better data structure for bindings (alist?)
-(defmacro create-module (ls module-name &rest bindings)
+(defmacro create-module (ls module-name &body bindings)
   `(progn
      (newtable ,ls)
      ,@(loop
