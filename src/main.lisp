@@ -5,8 +5,13 @@
 (defconstant +width+ 1600)
 (defconstant +height+ 1200)
 (defconstant +player-vision-color+ (raylib:make-rgba 20 70 200 70))
-(defconstant +player-vision-border-color+ (raylib:make-rgba 20 70 200 255))
+(defconstant +player-vision-border-color+ (raylib:make-rgba 50 10 250 255))
 (defconstant +bg-color+ (raylib:make-rgba 10 10 10 255))
+
+(defclass event-manager ()
+  ((current-events
+    :initform nil
+    :accessor current-events)))
 
 (defclass rendering ()
   ((color
@@ -17,16 +22,16 @@
   :rendering)
 
 (defclass movable ()
-  ((pos
+  ((current-position
     :initarg :pos
-    :accessor pos)
-   (next-pos
+    :accessor current-position)
+   (next-position
     :initform nil
-    :accessor next-pos)
-   (velocity
-    :initarg :velocity
+    :accessor next-position)
+   (heading
+    :initarg :heading
     :initform 0
-    :accessor velocity)))
+    :accessor heading)))
 
 (defmethod component-type ((component movable))
   :movable)
@@ -43,9 +48,12 @@
   :head)
 
 (defclass player-intent ()
-  ((dist
+  ((distance
     :initform 0
-    :accessor dist)))
+    :accessor intent-distance)
+   (head-angle
+    :initform 0
+    :accessor intent-head-angle)))
 
 (defun make-default-intent ()
   (make-instance 'player-intent))
@@ -75,7 +83,8 @@
 
 (defun draw-line-in-direction (x y angle length color)
   (raylib:draw-line
-   x y
+   (round x)
+   (round y)
    (round (+ x (* length (sin angle))))
    (round (- y (* length (cos angle))))
    color))
@@ -91,23 +100,28 @@
     (loop
       for tup in tups
       do (progn
-           (let* ((p (pos (cadr tup)))
+           (let* ((p (current-position (cadr tup)))
                   (px (car p))
                   (py (cadr p))
                   (heading (head-heading (caddr tup))))
              (render-player-vision px py heading)
-             (raylib:draw-circle px py +player-radius+ (color (car tup))))))))
+             (raylib:draw-circle
+              (round px)
+              (round py)
+              +player-radius+
+              (color (car tup))))))))
 
 (defun run-render-system (ecs)
   (render-players ecs))
 
 (defun valid-position? (p)
-  (let ((x (car p))
-        (y (cadr p)))
-    (and (>= x +player-radius+)
-         (<= x (- +width+ +player-radius+))
-         (>= y +player-radius+)
-         (<= y (- +height+ +player-radius+)))))
+  (when p
+    (let ((x (car p))
+          (y (cadr p)))
+      (and (>= x +player-radius+)
+           (<= x (- +width+ +player-radius+))
+           (>= y +player-radius+)
+           (<= y (- +height+ +player-radius+))))))
 
 (defun run-movement-system (ecs)
   (let ((tups (find-components ecs :movable)))
@@ -115,13 +129,10 @@
       for tup in tups
       do (progn
            (let* ((comp (car tup))
-                  (p (pos comp))
-                  (v (velocity comp))
-                  (next (list (+ (car p) v)
-                              (cadr p))))
-             (if (valid-position? next)
-                 (setf (next-pos comp) next)
-                 (setf (next-pos comp) p)))))))
+                  (p (current-position comp)))
+             (if (valid-position? (next-position comp))
+                 (setf (current-position comp) (next-position comp))
+                 (setf (next-position comp) p)))))))
 
 (defun run-head-movement-system (ecs)
   (let ((tups (find-components ecs :head)))
@@ -129,8 +140,9 @@
       for tup in tups
       do (progn
            (let* ((comp (car tup)))
-             (setf (head-heading comp)
-                   (next-head-heading comp)))))))
+             (when (next-head-heading comp)
+               (setf (head-heading comp)
+                     (next-head-heading comp))))))))
 
 (defun dist-sqr (p q)
   (+ (expt (- (car p) (car q))
@@ -151,26 +163,35 @@
       do (let ((p (car tup)))
            (if (some
                 (lambda (pc)
-                  (players-collide? +player-radius+ (next-pos p) (next-pos (car pc))))
+                  (players-collide? +player-radius+
+                                    (next-position p)
+                                    (next-position (car pc))))
                 (remove tup all :test #'eq))
-               (setf (next-pos p) (pos p))
-               (setf (pos p) (next-pos p)))))))
+               (setf (next-position p) (current-position p))
+               (setf (current-position p) (next-position p)))))))
 
 (defun lua-getx (movable)
   (lambda (ls)
-    (lua::pushnumber ls (coerce (car (pos movable)) 'double-float))
+    (lua::pushnumber
+     ls
+     (coerce (car (current-position movable)) 'double-float))
     1))
 
 (defun lua-gety (movable)
   (lambda (ls)
-    (lua::pushnumber ls (coerce (cadr (pos movable)) 'double-float))
+    (lua::pushnumber
+     ls
+     (coerce (cadr (current-position movable)) 'double-float))
     1))
+
+(defun lua-create-tagged-table (ls tag)
+  (lua::newtable ls)
+  (lua::pushstring ls tag)
+  (lua::setfield ls -2 "tag"))
 
 (defun lua-turn-body-part (ls tag)
   (let ((angle (lua::tonumber ls -1)))
-    (lua::newtable ls)
-    (lua::pushstring ls tag)
-    (lua::setfield ls -2 "tag")
+    (lua-create-tagged-table ls tag)
     (lua::pushnumber ls angle)
     (lua::setfield ls -2 "angle")
     1))
@@ -180,6 +201,13 @@
 
 (defun lua-turn-head (ls)
   (lua-turn-body-part ls "turn_head_right"))
+
+(defun lua-move (ls)
+  (let ((distance (lua::tonumber ls -1)))
+    (lua-create-tagged-table ls "move")
+    (lua::pushnumber ls distance)
+    (lua::setfield ls -2 "distance")
+    1))
 
 (defun create-lua-player (ecs file-path movable)
   (let* ((ls (lua::newstate))
@@ -191,6 +219,7 @@
         ls "me"
       ("x" (lua-getx movable))
       ("y" (lua-gety movable))
+      ("move" #'lua-move)
       ("turn" #'lua-turn)
       ("turn_head" #'lua-turn-head))
     (make-collidable
@@ -207,19 +236,23 @@
       (progn
         (lua::getfield ls -1 "tag")
         (let ((tag (lua::tostring ls -1)))
+          (lua::pop ls 1)
           (cond
             ((equal tag "turn_right")
-             (lua::pop ls 1)
              (lua::getfield ls -1 "angle")
              (let ((angle (lua::tonumber ls -1)))
                (lua::pop ls 1)
                (make-instance 'turn-cmd :angle angle)))
             ((equal tag "turn_head_right")
-             (lua::pop ls 1)
              (lua::getfield ls -1 "angle")
              (let ((angle (lua::tonumber ls -1)))
                (lua::pop ls 1)
                (make-instance 'turn-head-cmd :angle angle)))
+            ((equal tag "move")
+             (lua::getfield ls -1 "distance")
+             (let ((distance (lua::tonumber ls -1)))
+               (lua::pop ls 1)
+               (make-instance 'move-cmd :distance distance)))
             (t (error (make-condition 'unknown-player-command :tag tag))))))
       (error (make-condition 'player-command-could-not-be-read))))
 
@@ -231,38 +264,12 @@
     (lua::pop ls 1)
     cmd))
 
-(defun update-intents (head cmds)
-  (mapc (lambda (cmd)
-          (update-intent head cmd))
-        cmds))
-
-(defgeneric update-intent (head cmd)
-  (:documentation "Given a player command CMD, update the current intent accordingly."))
-
-(defmethod update-intent ((head head) (cmd turn-head-cmd))
-  (setf (next-head-heading head)
-        (+ (head-heading head)
-           (head-turn-angle cmd))))
-
-(defmethod update-intent ((head head) (cmd turn-cmd))
-  nil)
-
-(defun run-lua-control-system (ecs player-events)
-  (let ((cts (find-components ecs :lua-controlled :head)))
-    (dolist (c cts)
-      (let ((ls (lua-state (car c)))
-            (head (cadr c)))
-        (lua::assert-stack-size ls 1)
-        (let ((cmds
-                (mapcan
-                 (lambda (e)
-                   (let ((event-type (car e)))
-                     (cond
-                       ((eq event-type :tick)
-                        (call-on-tick ls (cadr e)))
-                       (t (format t "unhandled player event: ~a~%" event-type)))))
-                 player-events)))
-          (update-intent head cmds))))))
+(defun call-on-round-started (ls)
+  (lua::getfield ls 1 "on_round_started")
+  (lua::pcall-ex ls 0 1 0)
+  (let ((cmd (read-player-command ls)))
+    (lua::pop ls 1)
+    cmd))
 
 (defclass turn-cmd ()
   ((angle
@@ -274,6 +281,53 @@
     :initarg :angle
     :reader head-turn-angle)))
 
+(defclass move-cmd ()
+  ((distance
+    :initarg :distance
+    :reader move-distance)))
+
+(defun update-intents (lua-controlled cmds)
+  (mapc (lambda (cmd)
+          (update-intent lua-controlled cmd))
+        cmds))
+
+(defgeneric update-intent (intent cmd)
+  (:documentation "Given a player command CMD, update the current intent accordingly."))
+
+(defmethod update-intent ((intent player-intent) (cmd turn-head-cmd))
+  (setf (intent-head-angle intent)
+        (head-turn-angle cmd)))
+
+(defmethod update-intent ((intent player-intent) (cmd turn-cmd))
+  nil)
+
+(defmethod update-intent ((intent player-intent) (cmd move-cmd))
+  (setf (intent-distance intent)
+        (move-distance cmd)))
+
+(defun run-lua-control-system (ecs event-manager)
+  (let ((events (current-events event-manager)))
+    (when events
+      (let ((player-events (game-events->player-events events))
+            (cts (find-components ecs :lua-controlled)))
+        (dolist (c cts)
+          (let* ((comp (car c))
+                 (intent (intent comp))
+                 (ls (lua-state comp)))
+            (lua::assert-stack-size ls 1)
+            (let ((cmds
+                    (mapcan
+                     (lambda (e)
+                       (let ((event-type (car e)))
+                         (cond
+                           ((eq event-type :tick)
+                            (list (call-on-tick ls (cadr e))))
+                           ((eq event-type :round-started)
+                            (list (call-on-round-started ls)))
+                           (t (format t "unhandled player event: ~a~%" event-type)))))
+                     player-events)))
+              (update-intents intent cmds))))))))
+
 (define-condition unknown-player-command (error)
   ((tag
     :initarg :tag
@@ -283,25 +337,29 @@
   ())
 
 (defclass game-state ()
-  ((round
+  ((current-round
     :initform 1
     :accessor current-round)
-   (tick
+   (current-tick
     :initform 0
-    :accessor tick)))
+    :accessor current-tick)))
 
 (defun tick-events (state)
-  (let* ((tick (tick state))
+  (let* ((tick (current-tick state))
          (evts (list (list :tick tick))))
     (if (zerop tick)
         (cons (list :round-started (current-round state))
               evts)
         evts)))
 
-(defun determine-game-events (state)
+(defun determine-initial-tick-events (state)
   (concatenate
    'list
    (tick-events state)))
+
+(defmethod next-tick ((event-manager event-manager) (state game-state))
+  (setf (current-events event-manager)
+        (determine-initial-tick-events state)))
 
 (defun game-events->player-events (game-events)
   (reduce
@@ -317,30 +375,49 @@
    :initial-value nil))
 
 (defun advance-game-state (state)
-  (incf (tick state)))
+  (incf (current-tick state)))
 
-(defun run-all-systems (ecs state)
+(defun run-intent-application-system (ecs)
+  (let ((cts (find-components ecs :lua-controlled :head :movable)))
+    (dolist (c cts)
+      (let* ((intent (intent (car c)))
+             (head (cadr c))
+             (movable (caddr c)))
+        (setf (next-position movable)
+              (list (+ (car (current-position movable))
+                       (intent-distance intent))
+                    (cadr (current-position movable))))
+        (setf (next-head-heading head)
+              (+ (head-heading head)
+                 (intent-head-angle intent)))))))
+
+(defun run-all-systems (ecs state event-manager)
   (run-render-system ecs)
-  (let* ((evts (determine-game-events state))
-         (player-events (game-events->player-events evts)))
-    (run-lua-control-system ecs player-events)
-    (run-movement-system ecs)
-    (run-head-movement-system ecs)
-    (run-collision-system ecs)
-    (advance-game-state state)))
+  (next-tick event-manager state)
+  (run-movement-system ecs)
+  (run-head-movement-system ecs)
+  (run-collision-system ecs)
+  (run-lua-control-system ecs event-manager)
+  (run-intent-application-system ecs)
+  (advance-game-state state))
 
 (defun main ()
   (let* ((state (make-instance 'game-state))
+         (event-manager (make-instance 'event-manager))
          (ecs (make-instance 'ecs))
-         (player-1 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(100 250) :velocity 2)))
-         (player-2 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(500 250) :velocity -1))))
+         (player-1 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(100 250))))
+         ;; (player-2 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(500 250))))
+         )
     (raylib:with-window (+width+ +height+ "HALLO")
       (raylib:set-target-fps 60)
       (loop
         until (raylib:window-should-close)
         do (raylib:with-drawing
              (raylib:clear-background +bg-color+)
-             (raylib:draw-fps 20 20)
-             (run-all-systems ecs state))))
+             (raylib:draw-fps 5 5)
+             (raylib:draw-text (format nil "Tick: ~a" (current-tick state))
+                               5 (- +height+ 20) 20 :green)
+             (run-all-systems ecs state event-manager))))
     (lua::close (lua-state player-1))
-    (lua::close (lua-state player-2))))
+    ;; (lua::close (lua-state player-2))
+    ))
