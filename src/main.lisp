@@ -231,60 +231,97 @@
       movable))
     lua-controlled))
 
-(defun read-player-command (ls)
+(defun read-n-player-commands (ls n)
+  (labels
+      ((rec (i acc)
+         (lua::pushinteger ls i)
+         (lua::gettable ls -2)
+         (lua::getfield ls -1 "tag")
+         (let* ((tag (lua::tostring ls -1))
+                (cmd
+                  (cond
+                    ((equal tag "turn_right")
+                     (lua::pop ls 1)
+                     (lua::getfield ls -1 "angle")
+                     (let ((angle (lua::tonumber ls -1)))
+                       (lua::pop ls 1)
+                       (make-instance 'turn-cmd :angle angle)))
+                    ((equal tag "turn_head_right")
+                     (lua::pop ls 1)
+                     (lua::getfield ls -1 "angle")
+                     (let ((angle (lua::tonumber ls -1)))
+                       (lua::pop ls 1)
+                       (make-instance 'turn-head-cmd :angle angle)))
+                    ((equal tag "move")
+                     (lua::pop ls 1)
+                     (lua::getfield ls -1 "distance")
+                     (let ((distance (lua::tonumber ls -1)))
+                       (lua::pop ls 1)
+                       (make-instance 'move-cmd :distance distance)))
+                    (t (error (make-condition 'unknown-player-command :tag tag)))))
+                (new-acc (cons cmd acc)))
+           ;; pop the command
+           (lua::pop ls 1)
+           (if (= i n)
+               new-acc
+               (rec (1+ i) new-acc)))))
+    (rec 1 nil)))
+
+(defun read-player-commands (ls)
   (if (lua::istable ls -1)
-      (progn
-        (lua::getfield ls -1 "tag")
-        (let ((tag (lua::tostring ls -1)))
-          (lua::pop ls 1)
-          (cond
-            ((equal tag "turn_right")
-             (lua::getfield ls -1 "angle")
-             (let ((angle (lua::tonumber ls -1)))
-               (lua::pop ls 1)
-               (make-instance 'turn-cmd :angle angle)))
-            ((equal tag "turn_head_right")
-             (lua::getfield ls -1 "angle")
-             (let ((angle (lua::tonumber ls -1)))
-               (lua::pop ls 1)
-               (make-instance 'turn-head-cmd :angle angle)))
-            ((equal tag "move")
-             (lua::getfield ls -1 "distance")
-             (let ((distance (lua::tonumber ls -1)))
-               (lua::pop ls 1)
-               (make-instance 'move-cmd :distance distance)))
-            (t (error (make-condition 'unknown-player-command :tag tag))))))
+      (let ((nresults (lua::rawlen ls -1)))
+        (unless (zerop nresults)
+          (read-n-player-commands ls nresults)))
       (error (make-condition 'player-command-could-not-be-read))))
 
 (defun call-on-tick (ls tick)
   (lua::getfield ls 1 "on_tick")
   (lua::pushnumber ls (coerce tick 'double-float))
   (lua::pcall-ex ls 1 1 0)
-  (let ((cmd (read-player-command ls)))
+  (let ((cmds (read-player-commands ls)))
+    (mapc #'print-command cmds)
+    ;; pop the list of commands
     (lua::pop ls 1)
-    cmd))
+    cmds))
 
 (defun call-on-round-started (ls)
   (lua::getfield ls 1 "on_round_started")
-  (lua::pcall-ex ls 0 1 0)
-  (let ((cmd (read-player-command ls)))
-    (lua::pop ls 1)
-    cmd))
+  (if (lua::isnil ls -1)
+      (progn
+        (lua::pop ls 1)
+        nil)
+      (progn
+        (lua::pcall-ex ls 0 1 0)
+        (let ((cmds (read-player-commands ls)))
+          (lua::pop ls 1)
+          cmds))))
+
+(defgeneric print-command (cmd)
+  (:documentation "Print a debug representation of some player command."))
 
 (defclass turn-cmd ()
   ((angle
     :initarg :angle
     :reader turn-angle)))
 
+(defmethod print-command ((cmd turn-cmd))
+  (format t "  turn    angle: ~d~%" (turn-angle cmd)))
+
 (defclass turn-head-cmd ()
   ((angle
     :initarg :angle
-    :reader head-turn-angle)))
+    :reader turn-head-angle)))
+
+(defmethod print-command ((cmd turn-head-cmd))
+  (format t "  turn-head    angle: ~d~%" (turn-head-angle cmd)))
 
 (defclass move-cmd ()
   ((distance
     :initarg :distance
     :reader move-distance)))
+
+(defmethod print-command ((cmd move-cmd))
+  (format t "  move    distance: ~d~%" (move-distance cmd)))
 
 (defun update-intents (lua-controlled cmds)
   (mapc (lambda (cmd)
@@ -296,7 +333,7 @@
 
 (defmethod update-intent ((intent player-intent) (cmd turn-head-cmd))
   (setf (intent-head-angle intent)
-        (head-turn-angle cmd)))
+        (turn-head-angle cmd)))
 
 (defmethod update-intent ((intent player-intent) (cmd turn-cmd))
   nil)
@@ -321,9 +358,9 @@
                        (let ((event-type (car e)))
                          (cond
                            ((eq event-type :tick)
-                            (list (call-on-tick ls (cadr e))))
+                            (call-on-tick ls (cadr e)))
                            ((eq event-type :round-started)
-                            (list (call-on-round-started ls)))
+                            (call-on-round-started ls))
                            (t (format t "unhandled player event: ~a~%" event-type)))))
                      player-events)))
               (update-intents intent cmds))))))))

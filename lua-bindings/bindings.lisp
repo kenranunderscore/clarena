@@ -19,7 +19,11 @@
 
 (defcfun (pushnumber "lua_pushnumber") :void
   (ls lua-state)
-  (s :double))
+  (x :double))
+
+(defcfun (pushinteger "lua_pushinteger") :void
+  (ls lua-state)
+  (n :int))
 
 (defcfun (tonumberx "lua_tonumberx") :double
   (ls lua-state)
@@ -99,5 +103,9 @@
   (index :int))
 
 (defcfun (settop "lua_settop") :void
+  (ls lua-state)
+  (index :int))
+
+(defcfun (rawlen "lua_rawlen") :unsigned-int
   (ls lua-state)
   (index :int))
