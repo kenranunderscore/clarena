@@ -101,3 +101,26 @@ that have been pushed onto the Lua stack."
 
 (defmacro istable (ls index)
   `(eq (type ,ls ,index) +ttable+))
+
+(defmacro isnil (ls index)
+  `(eq (type ,ls ,index) +tnil+))
+
+(defun print-stack-structure (ls)
+  "Print out a rough representation of what the stack looks like, that is, the
+types of values for now."
+  (format t "~%lua stack:~%")
+  (loop
+    for i from 1 to (gettop ls)
+    do
+       (let* ((type (type ls i)))
+         (format t "  [~2,'0d]  ~a~%" i
+                 (cond
+                   ((eq type +tnil+) "nil")
+                   ((eq type +tboolean+) "bool")
+                   ((eq type +tlightuserdata+) "lightuserdata")
+                   ((eq type +tnumber+) "number")
+                   ((eq type +tstring+) "string")
+                   ((eq type +ttable+) "table")
+                   ((eq type +tfunction+) "function")
+                   ((eq type +tuserdata+) "userdata")
+                   ((eq type +tthread+) "thread"))))))
