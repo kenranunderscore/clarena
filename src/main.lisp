@@ -130,9 +130,8 @@
       do (progn
            (let* ((comp (car tup))
                   (p (current-position comp)))
-             (if (valid-position? (next-position comp))
-                 (setf (current-position comp) (next-position comp))
-                 (setf (next-position comp) p)))))))
+             (unless (valid-position? (next-position comp))
+               (setf (next-position comp) p)))))))
 
 (defun run-head-movement-system (ecs)
   (let ((tups (find-components ecs :head)))
