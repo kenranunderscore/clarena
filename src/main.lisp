@@ -27,11 +27,7 @@
     :accessor current-position)
    (next-position
     :initform nil
-    :accessor next-position)
-   (heading
-    :initarg :heading
-    :initform 0
-    :accessor heading)))
+    :accessor next-position)))
 
 (defmethod component-type ((component movable))
   :movable)
