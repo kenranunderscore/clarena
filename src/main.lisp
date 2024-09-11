@@ -54,16 +54,25 @@
 (defun make-default-intent ()
   (make-instance 'player-intent))
 
-(defclass lua-controlled ()
+(defclass lua-player ()
   ((lua-state
     :initarg :lua-state
     :accessor lua-state)
+   (position
+    :initarg :position
+    :accessor player-position)
+   (next-position
+    :initform nil
+    :accessor next-player-position)
    (intent
     :initform (make-default-intent)
-    :accessor intent)))
+    :accessor intent)
+   (next-intent
+    :initform (make-default-intent)
+    :accessor next-intent)))
 
-(defmethod component-type ((component lua-controlled))
-  :lua-controlled)
+(defmethod component-type ((component lua-player))
+  :lua-player)
 
 (defclass collidable ()
   ((entity-id
@@ -92,11 +101,11 @@
    +player-vision-border-color+))
 
 (defun render-players (ecs)
-  (let ((tups (find-components ecs :rendering :movable :head)))
+  (let ((tups (find-components ecs :rendering :lua-player :head)))
     (loop
       for tup in tups
       do (progn
-           (let* ((p (current-position (cadr tup)))
+           (let* ((p (player-position (cadr tup)))
                   (px (car p))
                   (py (cadr p))
                   (heading (head-heading (caddr tup))))
@@ -119,15 +128,38 @@
            (>= y +player-radius+)
            (<= y (- +height+ +player-radius+))))))
 
-(defun run-movement-system (ecs)
-  (let ((tups (find-components ecs :movable)))
+(defun run-player-movement-system (ecs)
+  (let ((tups (find-components ecs :lua-player)))
     (loop
       for tup in tups
       do (progn
-           (let* ((comp (car tup))
-                  (p (current-position comp)))
-             (unless (valid-position? (next-position comp))
-               (setf (next-position comp) p)))))))
+           (let* ((player (car tup))
+                  (p (player-position player))
+                  (next-p (list
+                           (+ (car p)
+                              (intent-distance (intent player)))
+                           (cadr p))))
+             (if (valid-position? next-p)
+                 (setf (next-player-position player) next-p)
+                 (setf (next-player-position player) p)))))))
+
+(defun run-player-collision-system (ecs)
+  (let ((all (find-components ecs :lua-player)))
+    (loop
+      for tup in all
+      do (let ((player (car tup)))
+           (if (some
+                (lambda (pc)
+                  (players-collide? +player-radius+
+                                    (next-player-position player)
+                                    (next-player-position (car pc))))
+                (remove tup all :test #'eq))
+               (progn
+                 (setf (next-player-position player) (player-position player))
+                 (setf (next-intent player) (intent player)))
+               (progn
+                 (setf (player-position player) (next-player-position player))
+                 (setf (intent player) (next-intent player))))))))
 
 (defun run-head-movement-system (ecs)
   (let ((tups (find-components ecs :head)))
@@ -151,32 +183,18 @@
 (defun players-collide? (radius p q)
   (<= (distance p q) (* 2 radius)))
 
-(defun run-collision-system (ecs)
-  (let ((all (find-components ecs :movable :collidable)))
-    (loop
-      for tup in all
-      do (let ((p (car tup)))
-           (if (some
-                (lambda (pc)
-                  (players-collide? +player-radius+
-                                    (next-position p)
-                                    (next-position (car pc))))
-                (remove tup all :test #'eq))
-               (setf (next-position p) (current-position p))
-               (setf (current-position p) (next-position p)))))))
-
-(defun lua-getx (movable)
+(defun lua-getx (player)
   (lambda (ls)
     (lua::pushnumber
      ls
-     (coerce (car (current-position movable)) 'double-float))
+     (coerce (car (player-position player)) 'double-float))
     1))
 
-(defun lua-gety (movable)
+(defun lua-gety (player)
   (lambda (ls)
     (lua::pushnumber
      ls
-     (coerce (cadr (current-position movable)) 'double-float))
+     (coerce (cadr (player-position player)) 'double-float))
     1))
 
 (defun lua-create-tagged-table (ls tag)
@@ -204,27 +222,29 @@
     (lua::setfield ls -2 "distance")
     1))
 
-(defun create-lua-player (ecs file-path movable)
+(defun create-lua-player (ecs file-path position)
   (let* ((ls (lua::newstate))
-         (lua-controlled (make-instance 'lua-controlled :lua-state ls))
+         (lua-player (make-instance
+                      'lua-player
+                      :lua-state ls
+                      :position position))
          (head (make-instance 'head :heading 0.0)))
     (lua::openlibs ls)
     (lua::dofile ls file-path)
     (lua::create-module
         ls "me"
-      ("x" (lua-getx movable))
-      ("y" (lua-gety movable))
+      ("x" (lua-getx lua-player))
+      ("y" (lua-gety lua-player))
       ("move" #'lua-move)
       ("turn" #'lua-turn)
       ("turn_head" #'lua-turn-head))
-    (make-collidable
-     (new-entity
-      ecs
-      lua-controlled
-      head
-      (make-instance 'rendering :color :red)
-      movable))
-    lua-controlled))
+    (new-entity
+     ecs
+     lua-player
+     head
+     (make-instance 'rendering :color :red)
+     lua-player)
+    lua-player))
 
 (defun read-n-player-commands (ls n)
   (labels
@@ -318,9 +338,9 @@
 (defmethod print-command ((cmd move-cmd))
   (format t "  move    distance: ~d~%" (move-distance cmd)))
 
-(defun update-intents (lua-controlled cmds)
+(defun update-intents (intent cmds)
   (mapc (lambda (cmd)
-          (update-intent lua-controlled cmd))
+          (update-intent intent cmd))
         cmds))
 
 (defgeneric update-intent (intent cmd)
@@ -341,11 +361,11 @@
   (let ((events (current-events event-manager)))
     (when events
       (let ((player-events (game-events->player-events events))
-            (cts (find-components ecs :lua-controlled)))
+            (cts (find-components ecs :lua-player)))
         (dolist (c cts)
-          (let* ((comp (car c))
-                 (intent (intent comp))
-                 (ls (lua-state comp)))
+          (let* ((player (car c))
+                 (intent (intent player))
+                 (ls (lua-state player)))
             (lua::assert-stack-size ls 1)
             (let ((cmds
                     (mapcan
@@ -410,7 +430,7 @@
   (incf (current-tick state)))
 
 (defun run-intent-application-system (ecs)
-  (let ((cts (find-components ecs :lua-controlled :head :movable)))
+  (let ((cts (find-components ecs :lua-player :head :movable)))
     (dolist (c cts)
       (let* ((intent (intent (car c)))
              (head (cadr c))
@@ -426,20 +446,19 @@
 (defun run-all-systems (ecs state event-manager)
   (run-render-system ecs)
   (next-tick event-manager state)
-  (run-movement-system ecs)
+  ;; FIXME: both at once?
+  (run-player-movement-system ecs)
+  (run-player-collision-system ecs)
   (run-head-movement-system ecs)
-  (run-collision-system ecs)
   (run-lua-control-system ecs event-manager)
-  (run-intent-application-system ecs)
   (advance-game-state state))
 
 (defun main ()
   (let* ((state (make-instance 'game-state))
          (event-manager (make-instance 'event-manager))
          (ecs (make-instance 'ecs))
-         (player-1 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(100 250))))
-         ;; (player-2 (create-lua-player ecs "foo.lua" (make-instance 'movable :pos '(500 250))))
-         )
+         (player-1 (create-lua-player ecs "foo.lua" '(100 250)))
+         (player-2 (create-lua-player ecs "bar.lua" '(500 250))))
     (raylib:with-window (+width+ +height+ "HALLO")
       (raylib:set-target-fps 60)
       (loop
@@ -451,5 +470,4 @@
                                5 (- +height+ 20) 20 :green)
              (run-all-systems ecs state event-manager))))
     (lua::close (lua-state player-1))
-    ;; (lua::close (lua-state player-2))
-    ))
+    (lua::close (lua-state player-2))))
