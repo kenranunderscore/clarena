@@ -32,21 +32,19 @@
 (defmethod component-type ((component movable))
   :movable)
 
-(defclass head ()
-  ((head-heading
-    :initarg :heading
-    :accessor head-heading)
-   (next-head-heading
-    :initform nil
-    :accessor next-head-heading)))
-
-(defmethod component-type ((component head))
-  :head)
-
 (defclass player-intent ()
   ((distance
     :initform 0
     :accessor intent-distance)
+   (turn-angle
+    :initform 0
+    :accessor intent-turn-angle)
+   (attack-angle
+    :initform 0
+    :accessor intent-attack-angle)
+   (attack
+    :initform 0
+    :accessor intent-attack)
    (head-angle
     :initform 0
     :accessor intent-head-angle)))
@@ -64,6 +62,9 @@
    (next-position
     :initform nil
     :accessor next-player-position)
+   (head-heading
+    :initform 0
+    :accessor head-heading)
    (intent
     :initform (make-default-intent)
     :accessor intent)
@@ -101,14 +102,15 @@
    +player-vision-border-color+))
 
 (defun render-players (ecs)
-  (let ((tups (find-components ecs :rendering :lua-player :head)))
+  (let ((tups (find-components ecs :rendering :lua-player)))
     (loop
       for tup in tups
       do (progn
-           (let* ((p (player-position (cadr tup)))
+           (let* ((player (cadr tup))
+                  (heading (head-heading player))
+                  (p (player-position player))
                   (px (car p))
-                  (py (cadr p))
-                  (heading (head-heading (caddr tup))))
+                  (py (cadr p)))
              (render-player-vision px py heading)
              (raylib:draw-circle
               (round px)
@@ -138,7 +140,10 @@
                   (next-p (list
                            (+ (car p)
                               (intent-distance (intent player)))
-                           (cadr p))))
+                           (cadr p)))
+                  (next-head-heading (+ (head-heading player)
+                                        (intent-head-angle (intent player)))))
+             (setf (head-heading player) next-head-heading)
              (if (valid-position? next-p)
                  (setf (next-player-position player) next-p)
                  (setf (next-player-position player) p)))))))
@@ -227,8 +232,7 @@
          (lua-player (make-instance
                       'lua-player
                       :lua-state ls
-                      :position position))
-         (head (make-instance 'head :heading 0.0)))
+                      :position position)))
     (lua::openlibs ls)
     (lua::dofile ls file-path)
     (lua::create-module
@@ -241,7 +245,6 @@
     (new-entity
      ecs
      lua-player
-     head
      (make-instance 'rendering :color :red)
      lua-player)
     lua-player))
@@ -330,6 +333,14 @@
 (defmethod print-command ((cmd turn-head-cmd))
   (format t "  turn-head    angle: ~d~%" (turn-head-angle cmd)))
 
+(defclass turn-arms-cmd ()
+  ((angle
+    :initarg :angle
+    :reader turn-arms-angle)))
+
+(defmethod print-command ((cmd turn-arms-cmd))
+  (format t "  turn arms    angle: ~d~%" (turn-angle cmd)))
+
 (defclass move-cmd ()
   ((distance
     :initarg :distance
@@ -337,6 +348,12 @@
 
 (defmethod print-command ((cmd move-cmd))
   (format t "  move    distance: ~d~%" (move-distance cmd)))
+
+(defclass attack-cmd ()
+  ())
+
+(defmethod print-command ((cmd attack-cmd))
+  (format t "  attack~%"))
 
 (defun update-intents (intent cmds)
   (mapc (lambda (cmd)
@@ -351,6 +368,16 @@
         (turn-head-angle cmd)))
 
 (defmethod update-intent ((intent player-intent) (cmd turn-cmd))
+  nil)
+
+(defmethod update-intent ((intent player-intent) (cmd turn-head-cmd))
+  (setf (intent-head-angle intent)
+        (turn-head-angle cmd)))
+
+(defmethod update-intent ((intent player-intent) (cmd turn-arms-cmd))
+  nil)
+
+(defmethod update-intent ((intent player-intent) (cmd attack-cmd))
   nil)
 
 (defmethod update-intent ((intent player-intent) (cmd move-cmd))
