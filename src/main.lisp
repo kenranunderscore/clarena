@@ -5,7 +5,8 @@
 (defconstant +width+ 1600)
 (defconstant +height+ 1200)
 (defconstant +player-vision-color+ (raylib:make-rgba 20 70 200 70))
-(defconstant +player-vision-border-color+ (raylib:make-rgba 50 10 250 255))
+(defconstant +player-arms-color+ (raylib:make-rgba 50 255 100 255))
+(defconstant +player-vision-border-color+ (raylib:make-rgba 80 100 250 255))
 (defconstant +bg-color+ (raylib:make-rgba 10 10 10 255))
 
 (defclass event-manager ()
@@ -63,8 +64,11 @@
     :initform nil
     :accessor next-player-position)
    (head-heading
-    :initform 0
+    :initform 0.0
     :accessor head-heading)
+   (arms-heading
+    :initform 0.0
+    :accessor arms-heading)
    (intent
     :initform (make-default-intent)
     :accessor intent)
@@ -101,6 +105,12 @@
    (* 2 +player-radius+)
    +player-vision-border-color+))
 
+(defun render-player-arms (px py heading)
+  (draw-line-in-direction
+   px py heading
+   (* 2 +player-radius+)
+   +player-arms-color+))
+
 (defun render-players (ecs)
   (let ((tups (find-components ecs :rendering :lua-player)))
     (loop
@@ -112,6 +122,7 @@
                   (px (car p))
                   (py (cadr p)))
              (render-player-vision px py heading)
+             (render-player-arms px py (arms-heading player))
              (raylib:draw-circle
               (round px)
               (round py)
@@ -142,8 +153,11 @@
                               (intent-distance (intent player)))
                            (cadr p)))
                   (next-head-heading (+ (head-heading player)
-                                        (intent-head-angle (intent player)))))
+                                        (intent-head-angle (intent player))))
+                  (next-arms-heading (+ (arms-heading player)
+                                        (intent-attack-angle (intent player)))))
              (setf (head-heading player) next-head-heading)
+             (setf (arms-heading player) next-arms-heading)
              (if (valid-position? next-p)
                  (setf (next-player-position player) next-p)
                  (setf (next-player-position player) p)))))))
@@ -220,6 +234,9 @@
 (defun lua-turn-head (ls)
   (lua-turn-body-part ls "turn_head_right"))
 
+(defun lua-turn-arms (ls)
+  (lua-turn-body-part ls "turn_arms_right"))
+
 (defun lua-move (ls)
   (let ((distance (lua::tonumber ls -1)))
     (lua-create-tagged-table ls "move")
@@ -241,7 +258,8 @@
       ("y" (lua-gety lua-player))
       ("move" #'lua-move)
       ("turn" #'lua-turn)
-      ("turn_head" #'lua-turn-head))
+      ("turn_head" #'lua-turn-head)
+      ("turn_arms" #'lua-turn-arms))
     (new-entity
      ecs
      lua-player
@@ -270,6 +288,12 @@
                      (let ((angle (lua::tonumber ls -1)))
                        (lua::pop ls 1)
                        (make-instance 'turn-head-cmd :angle angle)))
+                    ((equal tag "turn_arms_right")
+                     (lua::pop ls 1)
+                     (lua::getfield ls -1 "angle")
+                     (let ((angle (lua::tonumber ls -1)))
+                       (lua::pop ls 1)
+                       (make-instance 'turn-arms-cmd :angle angle)))
                     ((equal tag "move")
                      (lua::pop ls 1)
                      (lua::getfield ls -1 "distance")
@@ -339,7 +363,7 @@
     :reader turn-arms-angle)))
 
 (defmethod print-command ((cmd turn-arms-cmd))
-  (format t "  turn arms    angle: ~d~%" (turn-angle cmd)))
+  (format t "  turn arms    angle: ~d~%" (turn-arms-angle cmd)))
 
 (defclass move-cmd ()
   ((distance
@@ -375,7 +399,8 @@
         (turn-head-angle cmd)))
 
 (defmethod update-intent ((intent player-intent) (cmd turn-arms-cmd))
-  nil)
+  (setf (intent-attack-angle intent)
+        (turn-arms-angle cmd)))
 
 (defmethod update-intent ((intent player-intent) (cmd attack-cmd))
   nil)
@@ -455,20 +480,6 @@
 
 (defun advance-game-state (state)
   (incf (current-tick state)))
-
-(defun run-intent-application-system (ecs)
-  (let ((cts (find-components ecs :lua-player :head :movable)))
-    (dolist (c cts)
-      (let* ((intent (intent (car c)))
-             (head (cadr c))
-             (movable (caddr c)))
-        (setf (next-position movable)
-              (list (+ (car (current-position movable))
-                       (intent-distance intent))
-                    (cadr (current-position movable))))
-        (setf (next-head-heading head)
-              (+ (head-heading head)
-                 (intent-head-angle intent)))))))
 
 (defun run-all-systems (ecs state event-manager)
   (run-render-system ecs)
